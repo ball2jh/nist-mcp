@@ -1,0 +1,47 @@
+name: Build NIST Index
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly on Monday at 6 AM UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: Install dependencies
+        run: pip install -e ".[scraper]"
+
+      - name: Build NIST database
+        run: python -m scraper -o nist_mcp.db
+
+      - name: Show database stats
+        run: |
+          sqlite3 nist_mcp.db "SELECT key, value FROM meta;"
+          sqlite3 nist_mcp.db "SELECT 'controls', COUNT(*) FROM controls;"
+          sqlite3 nist_mcp.db "SELECT 'publications', COUNT(*) FROM publications;"
+          sqlite3 nist_mcp.db "SELECT 'csf', COUNT(*) FROM csf;"
+          sqlite3 nist_mcp.db "SELECT 'glossary', COUNT(*) FROM glossary;"
+          sqlite3 nist_mcp.db "SELECT 'synonyms', COUNT(*) FROM synonyms;"
+          sqlite3 nist_mcp.db "SELECT 'mappings', COUNT(*) FROM mappings;"
+          sqlite3 nist_mcp.db "SELECT 'nice_roles', COUNT(*) FROM nice_roles;"
+          sqlite3 nist_mcp.db "SELECT 'cmvp', COUNT(*) FROM cmvp;"
+          sqlite3 nist_mcp.db "SELECT 'checklists', COUNT(*) FROM checklists;"
+          ls -lh nist_mcp.db
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: db-${{ github.run_id }}
+          name: "NIST Database ${{ github.run_id }}"
+          files: nist_mcp.db
+          make_latest: true
