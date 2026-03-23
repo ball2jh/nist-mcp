@@ -246,6 +246,65 @@ def glossary_common() -> str:
 
 
 # ---------------------------------------------------------------------------
+# MCP Prompts — workflow templates
+# ---------------------------------------------------------------------------
+
+
+@mcp.prompt
+def compliance_assessment(system_description: str, baseline: str = "MODERATE") -> str:
+    """Assess system compliance against a NIST SP 800-53 baseline."""
+    return f"""Assess the compliance of the following system against the NIST SP 800-53 {baseline} baseline.
+
+System: {system_description}
+
+Steps:
+1. Use search_controls with baseline="{baseline}" to get all required controls
+2. For each relevant control family, use get_control to read the full requirements
+3. Evaluate the system description against each control's statement
+4. Use get_framework_mappings to cross-reference with CSF if needed
+5. Produce a findings report with: compliant controls, gaps, and recommendations"""
+
+
+@mcp.prompt
+def vulnerability_analysis(cve_id: str, system_description: str = "") -> str:
+    """Analyze the impact of a specific CVE."""
+    return f"""Analyze the impact of {cve_id}{f' on: {system_description}' if system_description else ''}.
+
+Steps:
+1. Use get_cve("{cve_id}") to get full vulnerability details
+2. Check CVSS score, affected products (CPE), and CWE classification
+3. Note CISA KEV status if applicable
+4. Use search_controls with relevant CWE/topic to find applicable security controls
+5. Provide: severity assessment, affected components, recommended mitigations, applicable NIST controls"""
+
+
+@mcp.prompt
+def policy_draft(control_family: str) -> str:
+    """Draft a security policy based on NIST SP 800-53 controls."""
+    return f"""Draft a {control_family} security policy based on NIST SP 800-53 Rev 5 guidelines.
+
+Steps:
+1. Use search_controls with family="{control_family.lower()}" to list all controls in this family
+2. Use get_control for each key control to read the full statement and guidance
+3. Use search_publications with relevant keywords to find supporting NIST guidance
+4. Use lookup_glossary for any NIST-specific terms
+5. Draft the policy with: purpose, scope, roles/responsibilities, policy statements (mapped to controls), and references"""
+
+
+@mcp.prompt
+def incident_response_guide(incident_type: str) -> str:
+    """Get NIST guidance for handling a specific type of security incident."""
+    return f"""Provide NIST-based guidance for handling a {incident_type} incident.
+
+Steps:
+1. Use search_publications with query="{incident_type}" to find relevant NIST publications
+2. Use search_publications with query="incident response" to find SP 800-61 and related guides
+3. Use search_controls with query="{incident_type}" to find applicable security controls
+4. Use get_csf_data with function="RS" (Respond) and function="RC" (Recover) for framework guidance
+5. Provide: detection indicators, containment steps, eradication procedures, recovery steps, lessons learned — all mapped to NIST guidance"""
+
+
+# ---------------------------------------------------------------------------
 # Dynamic MCP Resource (registered in main() to capture index_mgr)
 # ---------------------------------------------------------------------------
 
@@ -300,7 +359,7 @@ def main() -> None:
     index_mgr = IndexManager(config)
 
     # Register tool groups (pass dependencies they need)
-    from nist_mcp.tools.admin import register_admin_tools
+    from nist_mcp.tools.admin import register_admin_tools, register_meta_search_tool
     from nist_mcp.tools.controls import register_control_tools
     from nist_mcp.tools.publications import register_publication_tools
     from nist_mcp.tools.frameworks import register_framework_tools
@@ -320,6 +379,8 @@ def main() -> None:
     nvd_client = NVDClient(api_key=config.nvd_api_key)
     kev_client = KEVClient(cache_dir=config.data_dir)
     register_nvd_tools(mcp, nvd_client, kev_client)
+
+    register_meta_search_tool(mcp, index_mgr)
 
     # Register the dynamic about resource (needs index_mgr)
     _register_about_resource(index_mgr)
