@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Annotated
 
+from fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
@@ -69,7 +70,7 @@ def register_reference_tools(mcp: "FastMCP", index_mgr: "IndexManager") -> None:
         db_path = await index_mgr.ensure_index()
 
         if not term and not query:
-            return "Please provide either 'term' for exact lookup or 'query' for keyword search."
+            raise ToolError("Please provide either 'term' for exact lookup or 'query' for keyword search.")
 
         if term:
             # Exact match by primary key

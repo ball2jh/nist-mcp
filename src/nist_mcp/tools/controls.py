@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
+from fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
@@ -285,7 +286,7 @@ def register_control_tools(mcp: FastMCP, index_mgr: IndexManager) -> None:
         db_path = await index_mgr.ensure_index()
 
         if not query and not family and not baseline:
-            return (
+            raise ToolError(
                 "Please provide at least one of: `query`, `family`, or `baseline` "
                 "to search controls."
             )

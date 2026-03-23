@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Annotated
 
+from fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
@@ -14,6 +15,11 @@ if TYPE_CHECKING:
     from nist_mcp.nvd import NVDClient
 
 log = logging.getLogger(__name__)
+
+_RATE_LIMIT_NOTE = (
+    "\n\nNote: NVD API rate limit is 5 requests per 30 seconds without an API key "
+    "(~6s between calls). Set NIST_MCP_NVD_API_KEY for 50 req/30s."
+)
 
 
 # ---------------------------------------------------------------------------
@@ -319,9 +325,10 @@ def register_nvd_tools(
     ) -> str:
         """Search the NVD CVE database. Supports keyword, CVSS severity, CPE product,
         CWE weakness type, and date range filters. Set has_kev=True for only CISA
-        Known Exploited Vulnerabilities. Results include CVE ID, description, severity, and score."""
+        Known Exploited Vulnerabilities. Results include CVE ID, description, severity,
+        and score. May take 6+ seconds without an NVD API key due to rate limiting."""
         if not any([keyword, severity, cpe_name, cwe_id, pub_start, pub_end, has_kev]):
-            return (
+            raise ToolError(
                 "Please provide at least one search parameter: keyword, severity, "
                 "cpe_name, cwe_id, pub_start/pub_end, or has_kev=True."
             )
@@ -338,13 +345,13 @@ def register_nvd_tools(
                 start_index=offset,
             )
         except Exception as e:
-            return f"NVD API error: {e}"
+            raise ToolError(f"NVD API error: {e}") from e
 
         vulnerabilities = data.get("vulnerabilities", [])
         total_results = data.get("totalResults", 0)
 
         if not vulnerabilities:
-            return f"No CVEs found matching your criteria. (NVD total: {total_results})"
+            return f"No CVEs found matching your criteria. (NVD returned 0 results)"
 
         # Extract CVE items
         cve_items = [v.get("cve", v) for v in vulnerabilities]
@@ -390,15 +397,16 @@ def register_nvd_tools(
     ) -> str:
         """Get full details for a CVE: description, CVSS scores, affected products (CPE),
         CWE classification, references, and CISA KEV status (if exploited: date added,
-        due date, required action). Use this after search_cves to get complete vulnerability details."""
+        due date, required action). Use this after search_cves to get complete vulnerability
+        details. May take 6+ seconds without an NVD API key due to rate limiting."""
         cve_id = cve_id.strip().upper()
         if not cve_id.startswith("CVE-"):
-            return f"Invalid CVE ID format: '{cve_id}'. Expected format: CVE-YYYY-NNNNN"
+            raise ToolError(f"Invalid CVE ID format: '{cve_id}'. Expected format: CVE-YYYY-NNNNN")
 
         try:
             data = await nvd_client.get_cve(cve_id)
         except Exception as e:
-            return f"NVD API error: {e}"
+            raise ToolError(f"NVD API error: {e}") from e
 
         vulnerabilities = data.get("vulnerabilities", [])
         if not vulnerabilities:
@@ -428,9 +436,10 @@ def register_nvd_tools(
         limit: Annotated[int, Field(ge=1, le=2000)] = 20,
         offset: Annotated[int, Field(ge=0)] = 0,
     ) -> str:
-        """Search the NVD CPE (Common Platform Enumeration) database for products and platforms."""
+        """Search the NVD CPE (Common Platform Enumeration) database for products
+        and platforms. May take 6+ seconds without an NVD API key due to rate limiting."""
         if not keyword and not match_string:
-            return "Please provide either 'keyword' or 'match_string' to search CPEs."
+            raise ToolError("Please provide either 'keyword' or 'match_string' to search CPEs.")
 
         try:
             data = await nvd_client.search_cpes(
@@ -440,7 +449,7 @@ def register_nvd_tools(
                 start_index=offset,
             )
         except Exception as e:
-            return f"NVD API error: {e}"
+            raise ToolError(f"NVD API error: {e}") from e
 
         products = data.get("products", [])
         total_results = data.get("totalResults", 0)
@@ -475,15 +484,16 @@ def register_nvd_tools(
         ],
     ) -> str:
         """Get the change history for a CVE — when it was modified, what changed
-        (score updates, CPE additions, CWE remaps)."""
+        (score updates, CPE additions, CWE remaps). May take 6+ seconds without
+        an NVD API key due to rate limiting."""
         cve_id = cve_id.strip().upper()
         if not cve_id.startswith("CVE-"):
-            return f"Invalid CVE ID format: '{cve_id}'. Expected format: CVE-YYYY-NNNNN"
+            raise ToolError(f"Invalid CVE ID format: '{cve_id}'. Expected format: CVE-YYYY-NNNNN")
 
         try:
             data = await nvd_client.get_cve_history(cve_id)
         except Exception as e:
-            return f"NVD API error: {e}"
+            raise ToolError(f"NVD API error: {e}") from e
 
         changes = data.get("cveChanges", [])
         total_results = data.get("totalResults", 0)
