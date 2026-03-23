@@ -112,6 +112,38 @@ def _tokenize_query(query: str) -> list[str]:
     return tokens
 
 
+def sanitize_fts_query(query: str) -> str:
+    """Sanitize a query string for safe use with FTS5 MATCH.
+
+    FTS5 treats ``-`` as a NOT (column exclusion) operator and other
+    punctuation as syntax.  This function quotes any bare token that
+    contains characters which would confuse the FTS5 parser (hyphens,
+    dots, slashes, etc.) so they are treated as literals.
+
+    Already-quoted phrases and FTS operators (AND/OR/NOT/NEAR) are
+    preserved as-is.
+    """
+    _FTS_OPERATORS = {"AND", "OR", "NOT", "NEAR"}
+    # Characters that are FTS5 syntax when unquoted
+    _NEEDS_QUOTING = re.compile(r"[-./\\:+*^~(){}]")
+
+    tokens = _tokenize_query(query)
+    safe: list[str] = []
+    for tok in tokens:
+        # Already quoted — leave alone
+        if tok.startswith('"'):
+            safe.append(tok)
+        # FTS operator — leave alone
+        elif tok.upper() in _FTS_OPERATORS:
+            safe.append(tok)
+        # Contains problematic characters — wrap in quotes
+        elif _NEEDS_QUOTING.search(tok):
+            safe.append(f'"{tok}"')
+        else:
+            safe.append(tok)
+    return " ".join(safe)
+
+
 # -- FTS search ----------------------------------------------------------------
 
 
@@ -145,6 +177,7 @@ def search_fts(
     """
     _validate_identifier(table)
     expanded = expand_query_with_synonyms(db_path, query)
+    expanded = sanitize_fts_query(expanded)
     conn = get_connection(db_path)
 
     fts_table = f"{table}_fts"

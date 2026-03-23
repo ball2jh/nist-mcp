@@ -349,13 +349,19 @@ def register_compliance_tools(mcp: "FastMCP", index_mgr: "IndexManager") -> None
                 params.append(f"%{category}%")
 
             if query:
-                # nice_roles has no FTS table — use LIKE on name + description
-                where_parts.append(
-                    "(nice_roles.name LIKE ? OR nice_roles.description LIKE ? "
-                    "OR nice_roles.id LIKE ?)"
-                )
-                like_val = f"%{query}%"
-                params.extend([like_val, like_val, like_val])
+                # nice_roles has no FTS table — use LIKE on name + description.
+                # Split query into words so "penetration testing" matches roles
+                # containing either word individually.
+                words = query.strip().split()
+                word_clauses = []
+                for word in words:
+                    like_val = f"%{word}%"
+                    word_clauses.append(
+                        "(nice_roles.name LIKE ? OR nice_roles.description LIKE ? "
+                        "OR nice_roles.id LIKE ?)"
+                    )
+                    params.extend([like_val, like_val, like_val])
+                where_parts.append(f"({' OR '.join(word_clauses)})")
 
             where_sql = " AND ".join(where_parts) if where_parts else "1=1"
 

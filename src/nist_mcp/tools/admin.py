@@ -158,20 +158,26 @@ def register_meta_search_tool(mcp: "FastMCP", index_mgr: "IndexManager") -> None
         for scope_key, table, label, fmt_fn in selected:
             try:
                 if table == "nice_roles":
-                    # nice_roles has no FTS table — use LIKE search instead
+                    # nice_roles has no FTS table — use LIKE search instead.
+                    # Split query into words for OR matching.
                     conn = db.get_connection(db_path)
                     try:
-                        like_val = f"%{query}%"
-                        count_sql = (
-                            "SELECT count(*) FROM nice_roles WHERE "
-                            "name LIKE ? OR description LIKE ? OR id LIKE ?"
-                        )
-                        total = conn.execute(count_sql, [like_val, like_val, like_val]).fetchone()[0]
+                        words = query.strip().split()
+                        word_clauses = []
+                        like_params: list = []
+                        for word in words:
+                            lv = f"%{word}%"
+                            word_clauses.append(
+                                "(name LIKE ? OR description LIKE ? OR id LIKE ?)"
+                            )
+                            like_params.extend([lv, lv, lv])
+                        where = " OR ".join(word_clauses)
+                        count_sql = f"SELECT count(*) FROM nice_roles WHERE {where}"
+                        total = conn.execute(count_sql, like_params).fetchone()[0]
                         rows = conn.execute(
-                            "SELECT * FROM nice_roles WHERE "
-                            "name LIKE ? OR description LIKE ? OR id LIKE ? "
-                            "ORDER BY category, name LIMIT ?",
-                            [like_val, like_val, like_val, per_scope],
+                            f"SELECT * FROM nice_roles WHERE {where} "
+                            f"ORDER BY category, name LIMIT ?",
+                            [*like_params, per_scope],
                         ).fetchall()
                         results = [dict(r) for r in rows]
                     finally:

@@ -491,9 +491,18 @@ def register_nvd_tools(
         if not changes:
             return f"No change history found for **{cve_id}**."
 
+        # Limit to most recent 20 events to avoid massive output
+        max_events = 20
+        shown = changes[:max_events]
+
         lines = [f"# Change History for {cve_id} ({total_results} events)\n"]
 
-        for change_wrapper in changes:
+        if total_results > max_events:
+            lines.append(
+                f"_Showing most recent {max_events} of {total_results} events._\n"
+            )
+
+        for change_wrapper in shown:
             change = change_wrapper.get("change", change_wrapper)
             lines.append(_format_history_event(change))
             lines.append("")
