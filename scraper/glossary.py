@@ -34,7 +34,7 @@ CREATE INDEX IF NOT EXISTS idx_glossary_term ON glossary(term);
 # ---------------------------------------------------------------------------
 
 # NIST CSRC glossary API endpoint
-_GLOSSARY_URL = "https://csrc.nist.gov/glossary/export/json"
+_GLOSSARY_URL = "https://csrc.nist.gov/csrc/media/glossary/glossary-export.zip"
 _TIMEOUT = 90
 
 # ---------------------------------------------------------------------------
@@ -197,18 +197,65 @@ def scrape_glossary(db: sqlite3.Connection) -> int:
     rows: list[dict[str, str]] | None = None
 
     try:
+        import io
+        import zipfile
+
         log.info("Downloading NIST glossary from %s ...", _GLOSSARY_URL)
         client = httpx.Client(timeout=_TIMEOUT, follow_redirects=True)
         resp = client.get(_GLOSSARY_URL)
         resp.raise_for_status()
         client.close()
 
-        data = resp.json()
-        rows = _parse_glossary_json(data)
+        z = zipfile.ZipFile(io.BytesIO(resp.content))
+        import json
+        data = json.loads(z.read(z.namelist()[0]))
+
+        # Structure: {"totalRecords": N, "parentTerms": [{term, link, definitions: [{text, sources}]}]}
+        parent_terms = data.get("parentTerms", [])
+        rows = []
+        for entry in parent_terms:
+            term = entry.get("term", "").strip()
+            if not term:
+                continue
+
+            defs = entry.get("definitions", [])
+            if not defs:
+                continue
+
+            # Take the first definition
+            defn = defs[0]
+            definition = defn.get("text", "").strip()
+            if not definition:
+                continue
+
+            # Extract source publications
+            sources = defn.get("sources", [])
+            source_texts = [s.get("text", "") for s in sources if s.get("text")]
+            source = ", ".join(source_texts) if source_texts else ""
+
+            # see_also: if there are multiple definitions from different sources,
+            # note the additional sources
+            see_also = ""
+            if len(defs) > 1:
+                alt_sources = []
+                for d in defs[1:]:
+                    for s in d.get("sources", []):
+                        if s.get("text"):
+                            alt_sources.append(s["text"])
+                if alt_sources:
+                    see_also = "Also defined in: " + ", ".join(alt_sources)
+
+            rows.append({
+                "term": term,
+                "definition": definition,
+                "source": source,
+                "see_also": see_also,
+            })
+
         if rows:
-            log.info("Parsed %d glossary terms from NIST API", len(rows))
+            log.info("Parsed %d glossary terms from NIST bulk download", len(rows))
         else:
-            log.warning("Glossary JSON parsed but no terms extracted; falling back")
+            log.warning("Glossary zip parsed but no terms extracted; falling back")
             rows = None
     except Exception:
         log.warning("Glossary download failed; using curated terms", exc_info=True)

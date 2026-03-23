@@ -341,43 +341,46 @@ def register_compliance_tools(mcp: "FastMCP", index_mgr: "IndexManager") -> None
         """Search NICE Framework work roles. 'What role handles incident response?'"""
         db_path = await index_mgr.ensure_index()
 
-        conn = db.get_connection(db_path)
-        try:
-            where_parts: list[str] = []
-            params: list = []
-
-            if category:
-                where_parts.append("nice_roles.category LIKE ?")
-                params.append(f"%{category}%")
-
-            if query:
-                # nice_roles has no FTS table — use LIKE on name + description.
-                # Split query into words so "penetration testing" matches roles
-                # containing either word individually.
-                words = query.strip().split()
-                word_clauses = []
-                for word in words:
-                    like_val = f"%{word}%"
-                    word_clauses.append(
-                        "(nice_roles.name LIKE ? OR nice_roles.description LIKE ? "
-                        "OR nice_roles.id LIKE ?)"
-                    )
-                    params.extend([like_val, like_val, like_val])
-                where_parts.append(f"({' OR '.join(word_clauses)})")
-
-            where_sql = " AND ".join(where_parts) if where_parts else "1=1"
-
-            count_sql = f"SELECT count(*) FROM nice_roles WHERE {where_sql}"
-            total = conn.execute(count_sql, params).fetchone()[0]
-
-            result_sql = (
-                f"SELECT * FROM nice_roles WHERE {where_sql} "
-                f"ORDER BY nice_roles.category, nice_roles.name LIMIT ?"
+        if query and not category:
+            # Use FTS for keyword search
+            filters = {}
+            results, total = db.search_fts(
+                db_path, "nice_roles", query, filters=filters, limit=limit
             )
-            rows = conn.execute(result_sql, [*params, limit]).fetchall()
-            results = [dict(r) for r in rows]
-        finally:
-            conn.close()
+        elif query and category:
+            # FTS + category filter
+            results, total = db.search_fts(
+                db_path, "nice_roles", query,
+                filters={"category": category}, limit=limit,
+            )
+        elif category:
+            # Category only — direct query
+            conn = db.get_connection(db_path)
+            try:
+                total = conn.execute(
+                    "SELECT count(*) FROM nice_roles WHERE category LIKE ?",
+                    [f"%{category}%"],
+                ).fetchone()[0]
+                rows = conn.execute(
+                    "SELECT * FROM nice_roles WHERE category LIKE ? "
+                    "ORDER BY category, name LIMIT ?",
+                    [f"%{category}%", limit],
+                ).fetchall()
+                results = [dict(r) for r in rows]
+            finally:
+                conn.close()
+        else:
+            # No filters — return all
+            conn = db.get_connection(db_path)
+            try:
+                total = conn.execute("SELECT count(*) FROM nice_roles").fetchone()[0]
+                rows = conn.execute(
+                    "SELECT * FROM nice_roles ORDER BY category, name LIMIT ?",
+                    [limit],
+                ).fetchall()
+                results = [dict(r) for r in rows]
+            finally:
+                conn.close()
 
         if not results:
             return "No NICE Framework work roles found matching your criteria."
