@@ -7,8 +7,7 @@ import tomllib
 
 
 _DEFAULT_DATA_DIR = Path.home() / ".nist-mcp"
-_DEFAULT_UPDATE_INTERVAL = 86400  # 24 hours in seconds
-_DEFAULT_GITHUB_REPO = "jacka/nist-mcp"
+_DEFAULT_UPDATE_INTERVAL = 7 * 86400  # 7 days in seconds
 
 
 @dataclass
@@ -18,7 +17,6 @@ class Config:
     data_dir: Path = field(default_factory=lambda: _DEFAULT_DATA_DIR)
     nvd_api_key: str | None = None
     update_interval: int = _DEFAULT_UPDATE_INTERVAL
-    github_repo: str = _DEFAULT_GITHUB_REPO
 
     @classmethod
     def load(cls) -> "Config":
@@ -58,17 +56,10 @@ class Config:
         else:
             update_interval = _DEFAULT_UPDATE_INTERVAL
 
-        github_repo = (
-            os.environ.get("NIST_MCP_GITHUB_REPO")
-            or file_values.get("github_repo")
-            or _DEFAULT_GITHUB_REPO
-        )
-
         config = cls(
             data_dir=data_dir,
             nvd_api_key=nvd_api_key,
             update_interval=update_interval,
-            github_repo=github_repo,
         )
 
         # Ensure data_dir exists on disk.

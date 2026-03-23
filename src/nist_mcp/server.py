@@ -317,16 +317,14 @@ def _register_about_resource(index_mgr: IndexManager) -> None:
         """Server version, data freshness, and available tools guide."""
         info = index_mgr.status()
         db_available = "Yes" if info["exists"] else "No"
-        version_tag = info.get("current_tag", "unknown")
-        last_check = info.get("last_check", "never")
+        built_at = info.get("built_at", "never")
         db_size = _format_size(info.get("db_size_bytes"))
 
         return (
             f"# NIST MCP Server\n\n"
             f"- **Server version:** {__version__}\n"
-            f"- **Database version:** {version_tag}\n"
+            f"- **Database built:** {built_at}\n"
             f"- **Database available:** {db_available}\n"
-            f"- **Last update check:** {last_check}\n"
             f"- **Database size:** {db_size}\n\n"
             f"## Available Tool Groups\n\n"
             f"| Group | Description |\n"

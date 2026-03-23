@@ -1,6 +1,5 @@
 """Tests for configuration loading."""
 
-import os
 from pathlib import Path
 
 import pytest
@@ -26,23 +25,19 @@ def tmp_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 class TestConfigDefaults:
     def test_defaults(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-        # Ensure no env vars leak in.
         for key in (
             "NIST_MCP_DATA_DIR",
             "NIST_MCP_NVD_API_KEY",
             "NIST_MCP_UPDATE_INTERVAL",
-            "NIST_MCP_GITHUB_REPO",
         ):
             monkeypatch.delenv(key, raising=False)
 
-        # Override data_dir so we don't write to the real home.
         monkeypatch.setenv("NIST_MCP_DATA_DIR", str(tmp_path / "data"))
 
         cfg = Config.load()
         assert cfg.data_dir == tmp_path / "data"
         assert cfg.nvd_api_key is None
-        assert cfg.update_interval == 86400
-        assert isinstance(cfg.github_repo, str)
+        assert cfg.update_interval == 7 * 86400  # 7 days
 
     def test_data_dir_created(self, tmp_data_dir: Path):
         cfg = Config.load()
@@ -61,34 +56,23 @@ class TestEnvOverrides:
         cfg = Config.load()
         assert cfg.update_interval == 3600
 
-    def test_github_repo(self, tmp_data_dir: Path, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setenv("NIST_MCP_GITHUB_REPO", "other-org/other-repo")
-        cfg = Config.load()
-        assert cfg.github_repo == "other-org/other-repo"
-
 
 class TestConfigFile:
     def test_file_values_used(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         data_dir = tmp_path / "from-env"
         monkeypatch.setenv("NIST_MCP_DATA_DIR", str(data_dir))
-        for key in (
-            "NIST_MCP_NVD_API_KEY",
-            "NIST_MCP_UPDATE_INTERVAL",
-            "NIST_MCP_GITHUB_REPO",
-        ):
+        for key in ("NIST_MCP_NVD_API_KEY", "NIST_MCP_UPDATE_INTERVAL"):
             monkeypatch.delenv(key, raising=False)
 
         data_dir.mkdir(parents=True)
         (data_dir / "config.toml").write_text(
             'nvd_api_key = "from-file"\n'
             "update_interval = 7200\n"
-            'github_repo = "file-org/file-repo"\n'
         )
 
         cfg = Config.load()
         assert cfg.nvd_api_key == "from-file"
         assert cfg.update_interval == 7200
-        assert cfg.github_repo == "file-org/file-repo"
 
     def test_env_overrides_file(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         data_dir = tmp_path / "mixed"

@@ -35,22 +35,22 @@ def register_admin_tools(mcp: FastMCP, index_mgr: IndexManager) -> None:
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
     async def update_database() -> str:
-        """Force refresh the NIST metadata index from GitHub Releases.
-        Downloads the latest pre-built database. Use this if you need
-        the most current publication or control data."""
-        tag = await index_mgr.force_update()
-        return f"Database updated to version: {tag}"
+        """Rebuild the NIST metadata index by downloading fresh data from
+        NIST sources (XLSX, JSON, ZIP). Takes about 5-10 seconds. Use this
+        if you need the most current publication or control data."""
+        built_at = await index_mgr.force_update()
+        return f"Database rebuilt at: {built_at}"
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True))
     async def database_status() -> str:
-        """Show the current NIST metadata index status: version, build date,
+        """Show the current NIST metadata index status: build date,
         last update check, database size, and file path. Use this to verify
         the database is available and check data freshness."""
         info = index_mgr.status()
         lines = [
             "## NIST Database Status",
             f"- **Available:** {'Yes' if info['exists'] else 'No'}",
-            f"- **Version:** {info.get('current_tag', 'unknown')}",
+            f"- **Built:** {info.get('built_at', 'never')}",
             f"- **Last check:** {info.get('last_check', 'never')}",
             f"- **Size:** {_format_size(info.get('db_size_bytes'))}",
             f"- **Path:** `{info['path']}`",
