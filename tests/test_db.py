@@ -45,8 +45,9 @@ def sample_db(tmp_path: Path) -> Path:
     conn.execute(
         """
         CREATE TABLE synonyms (
-            term TEXT PRIMARY KEY,
-            synonyms TEXT
+            alias TEXT NOT NULL,
+            canonical TEXT NOT NULL,
+            PRIMARY KEY (alias, canonical)
         )
         """
     )
@@ -64,14 +65,14 @@ def sample_db(tmp_path: Path) -> Path:
     # Rebuild FTS index.
     conn.execute("INSERT INTO controls_fts(controls_fts) VALUES('rebuild')")
 
-    # Synonyms.
-    conn.execute(
-        "INSERT INTO synonyms VALUES (?, ?)",
-        ("mfa", "multi-factor authentication,two-factor authentication"),
-    )
-    conn.execute(
-        "INSERT INTO synonyms VALUES (?, ?)",
-        ("2fa", "two-factor authentication"),
+    # Synonyms (alias -> canonical).
+    conn.executemany(
+        "INSERT INTO synonyms (alias, canonical) VALUES (?, ?)",
+        [
+            ("mfa", "multi-factor authentication"),
+            ("mfa", "two-factor authentication"),
+            ("2fa", "two-factor authentication"),
+        ],
     )
     conn.commit()
     conn.close()
@@ -205,7 +206,7 @@ class TestGetTableCount:
         assert get_table_count(sample_db, "controls") == 5
 
     def test_count_synonyms(self, sample_db: Path):
-        assert get_table_count(sample_db, "synonyms") == 2
+        assert get_table_count(sample_db, "synonyms") == 3
 
 
 # -- Control ID normalization --------------------------------------------------

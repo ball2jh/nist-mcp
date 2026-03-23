@@ -50,15 +50,16 @@ def expand_query_with_synonyms(db_path: Path, query: str) -> str:
         if cur.fetchone() is None:
             return query
 
-        # Build a lookup dict: lowered term -> list of synonym strings.
-        rows = conn.execute("SELECT term, synonyms FROM synonyms").fetchall()
+        # Build a lookup dict: lowered alias -> list of canonical strings.
+        # The synonyms table has (alias, canonical) pairs — an alias like
+        # "MFA" may map to multiple canonicals.
+        rows = conn.execute("SELECT alias, canonical FROM synonyms").fetchall()
         lookup: dict[str, list[str]] = {}
         for row in rows:
-            term = row["term"].strip().lower()
-            # synonyms column is comma-separated
-            syns = [s.strip() for s in row["synonyms"].split(",") if s.strip()]
-            if syns:
-                lookup[term] = syns
+            alias = row["alias"].strip().lower()
+            canonical = row["canonical"].strip()
+            if canonical:
+                lookup.setdefault(alias, []).append(canonical)
     finally:
         conn.close()
 

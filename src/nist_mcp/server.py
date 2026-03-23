@@ -301,12 +301,14 @@ def main() -> None:
 
     # Register tool groups (pass dependencies they need)
     from nist_mcp.tools.admin import register_admin_tools
+    from nist_mcp.tools.controls import register_control_tools
+    from nist_mcp.tools.publications import register_publication_tools
 
     register_admin_tools(mcp, index_mgr)
+    register_publication_tools(mcp, index_mgr, config)
+    register_control_tools(mcp, index_mgr)
 
     # Register the dynamic about resource (needs index_mgr)
     _register_about_resource(index_mgr)
-
-    # Future: register_publication_tools, register_control_tools, etc.
 
     mcp.run()
