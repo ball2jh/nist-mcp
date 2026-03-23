@@ -397,13 +397,87 @@ _CURATED_CHECKLISTS: list[dict[str, Any]] = [
 # ---------------------------------------------------------------------------
 
 
+_NCP_URL = "https://ncp.nist.gov/repository"
+_TIMEOUT = 60
+
+
+def _scrape_ncp_html() -> list[dict[str, Any]] | None:
+    """Scrape the NCP repository HTML table."""
+    import httpx
+    from bs4 import BeautifulSoup
+
+    try:
+        client = httpx.Client(timeout=_TIMEOUT, follow_redirects=True)
+        resp = client.get(_NCP_URL)
+        resp.raise_for_status()
+        client.close()
+    except Exception:
+        log.warning("NCP HTML download failed", exc_info=True)
+        return None
+
+    soup = BeautifulSoup(resp.text, "lxml")
+    table = soup.find("table")
+    if not table:
+        log.warning("No table found on NCP page")
+        return None
+
+    rows_out: list[dict[str, Any]] = []
+    for row in table.find_all("tr")[1:]:  # skip header
+        cells = row.find_all("td")
+        if len(cells) < 5:
+            continue
+
+        name_text = cells[0].get_text(strip=True)
+        product = cells[1].get_text(strip=True)
+        authority = cells[2].get_text(strip=True)
+        last_modified = cells[3].get_text(strip=True)
+        resources_text = cells[4].get_text(strip=True)
+
+        # Extract format from resources text
+        fmt = "XCCDF"
+        if "OVAL" in resources_text:
+            fmt = "OVAL"
+        elif "SCAP" in resources_text:
+            fmt = "SCAP"
+
+        # Generate an ID from the name
+        checklist_id = "NCP-" + name_text.split("(")[0].strip().replace(" ", "-")[:40]
+
+        rows_out.append({
+            "id": checklist_id,
+            "name": name_text,
+            "product": product,
+            "version": last_modified,
+            "authority": authority,
+            "target_audience": "Federal / DoD" if "DISA" in authority else "General",
+            "format": fmt,
+            "download_url": "https://ncp.nist.gov/repository",
+            "description": resources_text[:200] if resources_text else None,
+        })
+
+    return rows_out if rows_out else None
+
+
 def scrape_checklists(db: sqlite3.Connection) -> int:
     """Populate the ``checklists`` table with NCP checklist data.
 
-    Uses curated reference data since the NCP site is JS-rendered.
+    Tries to scrape from ncp.nist.gov. Falls back to curated data.
     Returns the number of rows inserted.
     """
-    rows = _CURATED_CHECKLISTS
+    live_rows = _scrape_ncp_html()
+
+    # Merge: use live data + curated data (deduplicating by product name)
+    if live_rows:
+        log.info("Scraped %d checklists from NCP", len(live_rows))
+        # Start with live rows, then add curated ones that aren't duplicates
+        seen_products = {r["product"].lower() for r in live_rows}
+        rows = list(live_rows)
+        for curated in _CURATED_CHECKLISTS:
+            if curated["product"].lower() not in seen_products:
+                rows.append(curated)
+        log.info("Merged to %d total checklists (live + curated)", len(rows))
+    else:
+        rows = _CURATED_CHECKLISTS
 
     db.execute("DELETE FROM checklists")
     db.executemany(

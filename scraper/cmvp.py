@@ -644,13 +644,71 @@ _CURATED_MODULES: list[dict[str, Any]] = [
 # ---------------------------------------------------------------------------
 
 
+_CMVP_URL = "https://csrc.nist.gov/projects/cryptographic-module-validation-program/validated-modules/search/all"
+_TIMEOUT = 60
+
+
+def _scrape_cmvp_html() -> list[dict[str, Any]] | None:
+    """Scrape the CMVP validated modules HTML table."""
+    import httpx
+    from bs4 import BeautifulSoup
+
+    try:
+        client = httpx.Client(timeout=_TIMEOUT, follow_redirects=True)
+        resp = client.get(_CMVP_URL)
+        resp.raise_for_status()
+        client.close()
+    except Exception:
+        log.warning("CMVP HTML download failed", exc_info=True)
+        return None
+
+    soup = BeautifulSoup(resp.text, "lxml")
+    table = soup.find("table")
+    if not table:
+        log.warning("No table found on CMVP page")
+        return None
+
+    rows_out: list[dict[str, Any]] = []
+    for row in table.find_all("tr")[1:]:  # skip header
+        cells = row.find_all("td")
+        if len(cells) < 5:
+            continue
+
+        cert_number = cells[0].get_text(strip=True)
+        vendor = cells[1].get_text(strip=True)
+        module_name = cells[2].get_text(strip=True)
+        module_type = cells[3].get_text(strip=True)
+        validation_date = cells[4].get_text(strip=True)
+
+        rows_out.append({
+            "cert_number": cert_number,
+            "vendor": vendor,
+            "module_name": module_name,
+            "module_type": module_type.replace("-", " ").title() if module_type else None,
+            "fips_level": None,  # not in the table, would need detail page
+            "status": "Active",
+            "validation_date": validation_date,
+            "expiration_date": None,
+            "algorithms": None,  # not in the table
+            "description": None,
+        })
+
+    return rows_out if rows_out else None
+
+
 def scrape_cmvp(db: sqlite3.Connection) -> int:
     """Populate the ``cmvp`` table with CMVP validated module data.
 
-    Uses curated reference data since the CMVP search page is JS-rendered.
+    Tries to scrape the full CMVP list from csrc.nist.gov. Falls back to
+    curated reference data if scraping fails.
     Returns the number of rows inserted.
     """
-    rows = _CURATED_MODULES
+    rows = _scrape_cmvp_html()
+    if rows:
+        log.info("Scraped %d CMVP modules from NIST", len(rows))
+    else:
+        rows = _CURATED_MODULES
+        log.info("Using curated CMVP data: %d modules", len(rows))
 
     db.execute("DELETE FROM cmvp")
     db.executemany(
