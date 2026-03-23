@@ -235,17 +235,54 @@ def _parse_xlsx(data: bytes) -> list[dict[str, Any]]:
 
 
 def _build_detail_url(series: str, number: str, revision: str | None) -> str:
-    """Build the CSRC detail page URL for a publication."""
-    series_slug = _SERIES_MAP.get(series, series.lower().replace(" ", ""))
-    # For SP 800 and SP 1800 series, the URL uses the sub-series
-    if series in ("SP 800", "SP 1800", "SP 500"):
-        parts = series.split(" ")
-        series_slug = parts[0].lower()
-        number = f"{parts[1]}/{number}" if parts[1] not in number else number
+    """Build the CSRC detail page URL for a publication.
 
-    url = f"{_DETAIL_BASE}/{series_slug}/{number}"
-    if revision:
-        url = f"{url}/rev-{revision}"
+    Real NIST CSRC URLs look like:
+        pubs/sp/800/53/r5/upd1/final
+        pubs/fips/140-3/final
+        pubs/ir/8011/vol-1/final
+        pubs/cswp/29/final
+    """
+    series_slug = _SERIES_MAP.get(series, series.lower().replace(" ", ""))
+
+    # The number field from the XLSX may contain the revision, e.g.
+    # "800-53 Rev. 5" or "800-53A Rev. 5".  Split number from revision.
+    num_part = number.strip()
+    rev_part = revision.strip() if revision else ""
+
+    # Extract revision from number if embedded (e.g., "800-53 Rev. 5")
+    rev_match = re.search(r"\s+Rev\.?\s*(\S+)", num_part, re.I)
+    if rev_match:
+        rev_part = rev_match.group(1)
+        num_part = num_part[: rev_match.start()]
+
+    # For SP series: "800-53" needs to become "800/53", "1800-35" -> "1800/35"
+    # Split on first hyphen only for the sub-series number
+    if series_slug == "sp":
+        dash = num_part.find("-")
+        if dash > 0:
+            prefix = num_part[:dash]      # "800"
+            suffix = num_part[dash + 1:]  # "53A"
+            # suffix might have more hyphens for volumes: "140A" stays "140A"
+            num_path = f"{prefix}/{suffix}"
+        else:
+            num_path = num_part
+    else:
+        num_path = num_part
+
+    # Clean up: replace spaces with hyphens, lowercase volume refs
+    num_path = num_path.replace(" ", "-").replace("Vol.", "vol").replace("vol-", "vol-")
+
+    url = f"{_DETAIL_BASE}/{series_slug}/{num_path}"
+
+    # Add revision if present: "5" -> "r5", "1" -> "r1"
+    if rev_part:
+        rev_clean = rev_part.strip().rstrip(".")
+        url = f"{url}/r{rev_clean}"
+
+    # NIST CSRC requires a status suffix like /final or /draft
+    url = f"{url}/final"
+
     return url
 
 
@@ -268,8 +305,23 @@ def _scrape_detail_page(
     try:
         resp = client.get(detail_url)
         if resp.status_code == 404:
-            log.debug("Detail page not found: %s", detail_url)
-            return pub, supplementals
+            # Try alternative status suffixes
+            for alt_status in ["draft", "ipd"]:
+                alt_url = detail_url.rsplit("/", 1)[0] + f"/{alt_status}"
+                resp = client.get(alt_url)
+                if resp.status_code == 200:
+                    detail_url = alt_url
+                    pub["detail_url"] = detail_url
+                    break
+            else:
+                # Also try without the /final suffix entirely
+                base_url = detail_url.rsplit("/", 1)[0]
+                resp = client.get(base_url)
+                if resp.status_code != 200:
+                    log.debug("Detail page not found: %s", detail_url)
+                    return pub, supplementals
+                detail_url = base_url
+                pub["detail_url"] = detail_url
         resp.raise_for_status()
     except httpx.HTTPError as exc:
         log.debug("Failed to fetch detail page %s: %s", detail_url, exc)
