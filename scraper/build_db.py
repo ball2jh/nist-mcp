@@ -173,7 +173,7 @@ def build_database(output_path: str = "nist_mcp.db", quick: bool = False) -> Non
             "csf_fts",
             "cmvp_fts",
             "checklists_fts",
-            "nice_fts",
+            "nice_roles_fts",
         ]
         for fts_table in fts_tables:
             try:

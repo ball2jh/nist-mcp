@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS nice_roles (
     tasks       TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_nice_category ON nice_roles(category);
-CREATE VIRTUAL TABLE IF NOT EXISTS nice_fts USING fts5(
+CREATE VIRTUAL TABLE IF NOT EXISTS nice_roles_fts USING fts5(
     id, name, category, description,
     content=nice_roles, content_rowid=rowid
 );
