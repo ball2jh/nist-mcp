@@ -303,10 +303,16 @@ def main() -> None:
     from nist_mcp.tools.admin import register_admin_tools
     from nist_mcp.tools.controls import register_control_tools
     from nist_mcp.tools.publications import register_publication_tools
+    from nist_mcp.tools.frameworks import register_framework_tools
+    from nist_mcp.tools.reference import register_reference_tools
+    from nist_mcp.tools.compliance import register_compliance_tools
 
     register_admin_tools(mcp, index_mgr)
     register_publication_tools(mcp, index_mgr, config)
     register_control_tools(mcp, index_mgr)
+    register_framework_tools(mcp, index_mgr)
+    register_reference_tools(mcp, index_mgr)
+    register_compliance_tools(mcp, index_mgr)
 
     # Register the dynamic about resource (needs index_mgr)
     _register_about_resource(index_mgr)
