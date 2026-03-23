@@ -154,20 +154,38 @@ def _parse_xlsx(data: bytes) -> list[dict[str, Any]]:
                 for j, cell in enumerate(lower_cells):
                     if "series" in cell:
                         header_map["series"] = j
-                    elif cell in ("#", "no.", "no") or "number" in cell:
+                    elif cell in ("#", "no.", "no") or "publication number" in cell or cell == "number":
                         header_map["number"] = j
                     elif cell == "title" or cell == "pub title":
                         header_map["title"] = j
                     elif "rev" in cell:
                         header_map["revision"] = j
-                    elif "status" in cell:
+                    elif cell == "stage" or "status" in cell:
                         header_map["status"] = j
-                    elif "date" in cell or "released" in cell:
+                    elif "release date" in cell or cell == "released":
                         header_map["pub_date"] = j
+                    elif "citation date" in cell:
+                        header_map.setdefault("pub_date", j)
                     elif "type" in cell:
                         header_map["pub_type"] = j
-                    elif "doi" in cell:
+                    elif cell == "doi":
                         header_map["doi"] = j
+                    elif cell == "abstract":
+                        header_map["abstract"] = j
+                    elif cell == "authors" and "affil" not in cell:
+                        header_map["authors"] = j
+                    elif cell == "url":
+                        header_map["pdf_url"] = j
+                    elif cell == "currenturl":
+                        header_map["detail_url"] = j
+                    elif cell == "supersedes":
+                        header_map["supersedes"] = j
+                    elif cell == "supersededby":
+                        header_map["superseded_by"] = j
+                    elif cell == "keywords" or cell == "topics":
+                        header_map.setdefault("topics", j)
+                    elif cell == "family":
+                        header_map["family"] = j
                 data_start = i + 1
                 break
 
@@ -194,10 +212,17 @@ def _parse_xlsx(data: bytes) -> list[dict[str, Any]]:
             series = _normalize_series(series_raw)
             number = _get("number")
             revision = _get("revision")
-            status = _get("status")
+            status = _get("status") or "Final"
             pub_date = _get("pub_date")
             pub_type = _get("pub_type")
             doi = _get("doi")
+            abstract = _get("abstract")
+            authors = _get("authors")
+            pdf_url = _get("pdf_url")
+            detail_url = _get("detail_url")
+            supersedes = _get("supersedes")
+            superseded_by = _get("superseded_by")
+            topics = _get("topics")
 
             if not number:
                 continue
@@ -210,17 +235,17 @@ def _parse_xlsx(data: bytes) -> list[dict[str, Any]]:
                 "number": number,
                 "revision": revision or None,
                 "title": title,
-                "abstract": None,
+                "abstract": abstract or None,
                 "status": status or None,
                 "pub_type": pub_type or None,
                 "pub_date": pub_date or None,
                 "doi": doi or None,
-                "pdf_url": None,
-                "detail_url": None,
-                "authors": None,
-                "topics": None,
-                "supersedes": None,
-                "superseded_by": None,
+                "pdf_url": pdf_url or None,
+                "detail_url": detail_url or None,
+                "authors": authors or None,
+                "topics": topics or None,
+                "supersedes": supersedes or None,
+                "superseded_by": superseded_by or None,
                 "is_latest": 1,
                 "related_pubs": None,
             })
