@@ -158,6 +158,7 @@ def register_compliance_tools(mcp: "FastMCP", index_mgr: "IndexManager") -> None
             if fts_terms:
                 query_str = " ".join(fts_terms)
                 expanded = db.expand_query_with_synonyms(db_path, query_str)
+                expanded = db.sanitize_fts_query(expanded)
                 where_parts.append("cmvp_fts MATCH ?")
                 params.append(expanded)
 
@@ -264,6 +265,7 @@ def register_compliance_tools(mcp: "FastMCP", index_mgr: "IndexManager") -> None
             if fts_terms:
                 query_str = " ".join(fts_terms)
                 expanded = db.expand_query_with_synonyms(db_path, query_str)
+                expanded = db.sanitize_fts_query(expanded)
                 where_parts.append("checklists_fts MATCH ?")
                 params.append(expanded)
 

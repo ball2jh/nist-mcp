@@ -206,6 +206,7 @@ def _search_controls_with_baseline(
 
         if query:
             expanded = db.expand_query_with_synonyms(db_path, query)
+            expanded = db.sanitize_fts_query(expanded)
             where_parts.append("controls_fts MATCH ?")
             params.append(expanded)
 
