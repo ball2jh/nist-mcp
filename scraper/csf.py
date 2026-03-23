@@ -40,7 +40,8 @@ CREATE INDEX IF NOT EXISTS idx_csf_level ON csf(level);
 # Data source URL
 # ---------------------------------------------------------------------------
 
-_CSF_URL = "https://csrc.nist.gov/extensions/nudp/services/json/csf/download?olirids=all"
+_CSF_OSCAL_URL = "https://raw.githubusercontent.com/usnistgov/oscal-content/main/nist.gov/CSF/v2.0/json/NIST_CSF_v2.0_catalog.json"
+_CSF_XLSX_URL = "https://csrc.nist.gov/extensions/nudp/services/json/csf/download?olirids=all"
 _TIMEOUT = 60
 
 # ---------------------------------------------------------------------------
@@ -501,31 +502,109 @@ def _build_from_xlsx(parsed: list[dict[str, Any]]) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
-def scrape_csf(db: sqlite3.Connection) -> int:
-    """Download CSF XLSX and populate the ``csf`` table.
+def _parse_oscal_csf(data: dict) -> list[dict[str, Any]]:
+    """Parse CSF 2.0 from OSCAL JSON catalog format."""
+    catalog = data.get("catalog", data)
+    groups = catalog.get("groups", [])
+    rows: list[dict[str, Any]] = []
 
-    Falls back to hardcoded CSF 2.0 data if the download fails.
+    for group in groups:
+        func_id = group["id"].upper()
+        func_name = group["title"]
+
+        # Function-level entry
+        rows.append({
+            "id": func_id,
+            "function_id": func_id,
+            "function_name": func_name,
+            "category_id": None,
+            "category_name": None,
+            "title": func_name,
+            "level": "function",
+        })
+
+        # Categories are controls at the group level
+        for cat in group.get("controls", []):
+            cat_id = cat["id"].upper().replace("_", ".")
+            cat_name = cat["title"]
+
+            rows.append({
+                "id": cat_id,
+                "function_id": func_id,
+                "function_name": func_name,
+                "category_id": cat_id,
+                "category_name": cat_name,
+                "title": cat_name,
+                "level": "category",
+            })
+
+            # Subcategories are nested controls
+            for sub in cat.get("controls", []):
+                sub_id = sub["id"].upper().replace("_", ".")
+                # Get the statement text from parts
+                sub_title = sub.get("title", "")
+                for part in sub.get("parts", []):
+                    if part.get("name") == "statement" and part.get("prose"):
+                        sub_title = part["prose"]
+                        break
+
+                rows.append({
+                    "id": sub_id,
+                    "function_id": func_id,
+                    "function_name": func_name,
+                    "category_id": cat_id,
+                    "category_name": cat_name,
+                    "title": sub_title,
+                    "level": "subcategory",
+                })
+
+    return rows
+
+
+def scrape_csf(db: sqlite3.Connection) -> int:
+    """Download CSF 2.0 and populate the ``csf`` table.
+
+    Tries OSCAL JSON first (structured, from GitHub), falls back to XLSX,
+    then to hardcoded data.
     Returns the number of rows inserted.
     """
     rows: list[dict[str, Any]] | None = None
 
-    # Try the live download first
+    # Try OSCAL JSON first (best source)
     try:
-        log.info("Downloading CSF 2.0 XLSX from NIST ...")
+        log.info("Downloading CSF 2.0 OSCAL JSON from GitHub ...")
         client = httpx.Client(timeout=_TIMEOUT, follow_redirects=True)
-        resp = client.get(_CSF_URL)
+        resp = client.get(_CSF_OSCAL_URL)
         resp.raise_for_status()
         client.close()
 
-        parsed = _parse_csf_xlsx(resp.content)
-        if parsed:
-            rows = _build_from_xlsx(parsed)
-            log.info("Parsed %d rows from CSF XLSX", len(rows))
+        data = resp.json()
+        rows = _parse_oscal_csf(data)
+        if rows:
+            log.info("Parsed %d CSF entries from OSCAL JSON", len(rows))
         else:
-            log.warning("XLSX parsed but no CSF IDs found; falling back to hardcoded data")
+            log.warning("OSCAL JSON parsed but empty; trying XLSX fallback")
+            rows = None
     except Exception:
-        log.warning("CSF download failed; using hardcoded CSF 2.0 data", exc_info=True)
+        log.warning("OSCAL JSON download failed; trying XLSX fallback", exc_info=True)
 
+    # Fallback: try the XLSX
+    if rows is None:
+        try:
+            log.info("Downloading CSF 2.0 XLSX from NIST ...")
+            client = httpx.Client(timeout=_TIMEOUT, follow_redirects=True)
+            resp = client.get(_CSF_XLSX_URL)
+            resp.raise_for_status()
+            client.close()
+
+            parsed = _parse_csf_xlsx(resp.content)
+            if parsed:
+                rows = _build_from_xlsx(parsed)
+                log.info("Parsed %d rows from CSF XLSX", len(rows))
+        except Exception:
+            log.warning("CSF XLSX download also failed", exc_info=True)
+
+    # Final fallback: hardcoded data
     if rows is None:
         rows = _build_from_hardcoded()
         log.info("Using hardcoded CSF 2.0 data: %d rows", len(rows))
