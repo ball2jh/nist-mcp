@@ -428,17 +428,85 @@ def _scrape_detail_page(
     return pub, supplementals
 
 
+def _normalize_nist_pubid(raw: str, known_ids: set[str]) -> str | None:
+    """Convert a raw NIST PubID like 'NIST FIPS 140-3' to our internal format.
+
+    Tries several strategies to match against known_ids. Returns None if
+    no match is found.
+    """
+    raw = raw.strip()
+    if not raw:
+        return None
+
+    # Strip "NIST " or "NIST  " prefix
+    cleaned = re.sub(r"^NIST\s+", "", raw)
+
+    # Try direct match after basic normalization (spaces->hyphens, add dots)
+    # "FIPS 140-3" -> "FIPS.140-3"
+    # "SP 800-53" -> "SP.800-53"
+    # "SP 800-108r1" -> "SP.800-108r1"
+    parts = cleaned.split(None, 1)
+    if len(parts) == 2:
+        series_part, rest = parts
+        rest_clean = rest.strip().replace(" ", "-")
+        candidate = f"{series_part}.{rest_clean}"
+        if candidate in known_ids:
+            return candidate
+
+        # Try with Rev. normalization: "SP.800-108r1" might be "SP.800-108-Rev.-1"
+        rev_match = re.search(r"r(\d+)$", rest_clean, re.I)
+        if rev_match:
+            base = rest_clean[: rev_match.start()]
+            rev_num = rev_match.group(1)
+            candidate2 = f"{series_part}.{base}-Rev.-{rev_num}"
+            if candidate2 in known_ids:
+                return candidate2
+
+        # Try without -updN suffix: "FIPS 140-2-upd1" -> "FIPS.140-2"
+        upd_match = re.search(r"-upd\d+$", rest_clean, re.I)
+        if upd_match:
+            base = rest_clean[: upd_match.start()]
+            candidate3 = f"{series_part}.{base}"
+            if candidate3 in known_ids:
+                return candidate3
+
+    # Fallback: try the raw string itself
+    if raw in known_ids:
+        return raw
+
+    return None
+
+
 def _compute_is_latest(pubs: list[dict[str, Any]]) -> None:
-    """Walk supersedes chains and set is_latest=0 for superseded pubs."""
-    # Build a set of all publication IDs that are superseded by something
-    superseded_ids: set[str] = set()
+    """Normalize supersedes/superseded_by to internal IDs and set is_latest."""
+    known_ids = {pub["id"] for pub in pubs}
+
+    # First pass: normalize supersedes/superseded_by to internal IDs
     for pub in pubs:
         sup = pub.get("supersedes")
         if sup:
-            superseded_ids.add(sup)
+            # May contain multiple comma-separated IDs
+            normalized = _normalize_nist_pubid(sup, known_ids)
+            pub["supersedes"] = normalized  # None if not found
 
+        sup_by = pub.get("superseded_by")
+        if sup_by:
+            normalized = _normalize_nist_pubid(sup_by, known_ids)
+            pub["superseded_by"] = normalized
+
+    # Second pass: if pub B supersedes pub A, then A.superseded_by = B
+    # Build a reverse map: superseded_id -> superseding_id
+    id_to_pub = {pub["id"]: pub for pub in pubs}
     for pub in pubs:
-        if pub["id"] in superseded_ids:
+        sup = pub.get("supersedes")
+        if sup and sup in id_to_pub and sup != pub["id"]:
+            older = id_to_pub[sup]
+            if not older.get("superseded_by"):
+                older["superseded_by"] = pub["id"]
+
+    # Third pass: mark is_latest=0 for any pub that has a superseded_by
+    for pub in pubs:
+        if pub.get("superseded_by"):
             pub["is_latest"] = 0
 
 
