@@ -133,7 +133,7 @@ class IndexManager:
             f"https://api.github.com/repos/"
             f"{self._config.github_repo}/releases/latest"
         )
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(follow_redirects=True) as client:
             resp = await client.get(url, timeout=30)
             resp.raise_for_status()
             return resp.json().get("tag_name")
