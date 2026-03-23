@@ -1,6 +1,6 @@
 # nist-mcp
 
-A Model Context Protocol (MCP) server that gives AI assistants structured access to the full NIST cybersecurity catalog: SP 800 and SP 1800 publications, SP 800-53 Rev 5 security controls, NIST CSF 2.0, the NVD vulnerability database (CVEs and CPEs), FIPS 140-2/3 validated cryptographic modules (CMVP), NCP security checklists, the NIST glossary, and NICE Framework work roles — all served from a local SQLite index that auto-updates from pre-built GitHub Releases.
+A Model Context Protocol (MCP) server that gives AI assistants structured access to the full NIST cybersecurity catalog: SP 800 and SP 1800 publications, SP 800-53 Rev 5 security controls, NIST CSF 2.0, the NVD vulnerability database (CVEs and CPEs), FIPS 140-2/3 validated cryptographic modules (CMVP), NCP security checklists, the NIST glossary, and NICE Framework work roles — all served from a local SQLite index that builds automatically on first use (~2 seconds) by downloading structured data directly from NIST.
 
 ## Installation
 
@@ -18,8 +18,7 @@ pip install nist-mcp
 |---|---|---|
 | `NIST_MCP_DATA_DIR` | `~/.nist-mcp` | Directory for the local database and cached documents |
 | `NIST_MCP_NVD_API_KEY` | _(none)_ | Optional NVD API key for higher rate limits (recommended) |
-| `NIST_MCP_UPDATE_INTERVAL` | `86400` | Seconds between background database update checks (default: 24 h) |
-| `NIST_MCP_GITHUB_REPO` | `jacka/nist-mcp` | GitHub repo to pull pre-built database releases from |
+| `NIST_MCP_UPDATE_INTERVAL` | `604800` | Seconds between background database rebuilds (default: 7 days) |
 
 ### config.toml
 
@@ -49,14 +48,14 @@ Add to your MCP client's server list (e.g. Claude Desktop `claude_desktop_config
 }
 ```
 
-The first run downloads the pre-built database (~50 MB) from GitHub Releases automatically.
+On first run, the server builds a local database by downloading structured data from NIST (~2 seconds). The database is cached and rebuilt automatically when stale (default: every 7 days).
 
 ## Available Tools
 
 | Tool | Description |
 |---|---|
 | `search_nist` | Meta-search across all 7 NIST data sources at once — use as starting point |
-| `update_database` | Force-refresh the local NIST index from the latest GitHub Release |
+| `update_database` | Rebuild the local NIST index by downloading fresh data from NIST sources |
 | `database_status` | Show database version, size, last update check, and file path |
 | `search_publications` | Full-text search across all NIST publication series (SP 800, SP 1800, FIPS, IR, CSWP, AI) |
 | `get_publication` | Full metadata for a specific publication: abstract, authors, supplemental materials |
