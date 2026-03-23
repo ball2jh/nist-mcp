@@ -306,6 +306,9 @@ def main() -> None:
     from nist_mcp.tools.frameworks import register_framework_tools
     from nist_mcp.tools.reference import register_reference_tools
     from nist_mcp.tools.compliance import register_compliance_tools
+    from nist_mcp.nvd import NVDClient
+    from nist_mcp.kev import KEVClient
+    from nist_mcp.tools.nvd import register_nvd_tools
 
     register_admin_tools(mcp, index_mgr)
     register_publication_tools(mcp, index_mgr, config)
@@ -313,6 +316,10 @@ def main() -> None:
     register_framework_tools(mcp, index_mgr)
     register_reference_tools(mcp, index_mgr)
     register_compliance_tools(mcp, index_mgr)
+
+    nvd_client = NVDClient(api_key=config.nvd_api_key)
+    kev_client = KEVClient(cache_dir=config.data_dir)
+    register_nvd_tools(mcp, nvd_client, kev_client)
 
     # Register the dynamic about resource (needs index_mgr)
     _register_about_resource(index_mgr)
