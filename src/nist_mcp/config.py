@@ -55,6 +55,8 @@ class Config:
             update_interval = int(file_values["update_interval"])
         else:
             update_interval = _DEFAULT_UPDATE_INTERVAL
+        if update_interval < 0:
+            raise ValueError("update_interval must be greater than or equal to 0")
 
         config = cls(
             data_dir=data_dir,

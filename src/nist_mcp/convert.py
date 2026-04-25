@@ -11,10 +11,19 @@ import csv
 import io
 import json
 import logging
+import tempfile
 import xml.dom.minidom
 from pathlib import Path
+from urllib.parse import urljoin
 
 import httpx
+
+from nist_mcp.safety import (
+    ALLOWED_DOCUMENT_HOSTS,
+    MAX_DOCUMENT_BYTES,
+    validate_https_url,
+    validate_page_range,
+)
 
 log = logging.getLogger(__name__)
 
@@ -29,6 +38,8 @@ async def download_file(url: str, dest: Path) -> Path:
 
     Creates parent directories as needed.  Returns *dest*.
     """
+    url = validate_https_url(url, allowed_hosts=ALLOWED_DOCUMENT_HOSTS)
+
     if dest.exists():
         log.debug("File already cached: %s", dest)
         return dest
@@ -36,11 +47,57 @@ async def download_file(url: str, dest: Path) -> Path:
     dest.parent.mkdir(parents=True, exist_ok=True)
     log.info("Downloading %s -> %s", url, dest)
 
-    async with httpx.AsyncClient(follow_redirects=True, timeout=120) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
+    redirects_remaining = 5
+    tmp_path: Path | None = None
 
-    dest.write_bytes(resp.content)
+    try:
+        async with httpx.AsyncClient(follow_redirects=False, timeout=120) as client:
+            while True:
+                validate_https_url(url, allowed_hosts=ALLOWED_DOCUMENT_HOSTS)
+                async with client.stream("GET", url) as resp:
+                    if resp.is_redirect:
+                        location = resp.headers.get("location")
+                        if not location:
+                            raise httpx.HTTPStatusError(
+                                "Redirect response missing Location header",
+                                request=resp.request,
+                                response=resp,
+                            )
+                        redirects_remaining -= 1
+                        if redirects_remaining < 0:
+                            raise httpx.TooManyRedirects("Too many redirects")
+                        url = urljoin(str(resp.url), location)
+                        validate_https_url(url, allowed_hosts=ALLOWED_DOCUMENT_HOSTS)
+                        continue
+
+                    resp.raise_for_status()
+
+                    with tempfile.NamedTemporaryFile(
+                        "wb",
+                        delete=False,
+                        dir=str(dest.parent),
+                        prefix=f".{dest.name}.",
+                    ) as tmp:
+                        tmp_path = Path(tmp.name)
+                        total = 0
+                        async for chunk in resp.aiter_bytes():
+                            total += len(chunk)
+                            if total > MAX_DOCUMENT_BYTES:
+                                raise ValueError(
+                                    "Downloaded document exceeds "
+                                    f"{MAX_DOCUMENT_BYTES // (1024 * 1024)} MB limit."
+                                )
+                            tmp.write(chunk)
+                    break
+    except Exception:
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
+        raise
+
+    if tmp_path is None:
+        raise RuntimeError("Download did not produce a file.")
+
+    tmp_path.replace(dest)
     return dest
 
 
@@ -286,14 +343,4 @@ def _parse_page_range(pages: str) -> list[int]:
     Supports formats like ``"1-50"``, ``"3"``, ``"1-5,10-12"``.
     Input is 1-based; output is 0-based.
     """
-    result: list[int] = []
-    for part in pages.split(","):
-        part = part.strip()
-        if "-" in part:
-            start_s, end_s = part.split("-", 1)
-            start = int(start_s.strip())
-            end = int(end_s.strip())
-            result.extend(range(start - 1, end))  # 1-based -> 0-based
-        else:
-            result.append(int(part) - 1)
-    return result
+    return validate_page_range(pages)

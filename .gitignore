@@ -30,6 +30,7 @@ htmlcov/
 .DS_Store
 
 # Project-specific
+.codex
 data/
 *.db
 *.sqlite

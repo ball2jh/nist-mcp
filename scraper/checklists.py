@@ -458,6 +458,24 @@ def _scrape_ncp_html() -> list[dict[str, Any]] | None:
     return rows_out if rows_out else None
 
 
+def _deduplicate_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep checklist IDs unique before inserting into the primary-key table."""
+    seen: dict[str, int] = {}
+    unique: list[dict[str, Any]] = []
+
+    for row in rows:
+        base_id = row["id"]
+        count = seen.get(base_id, 0)
+        seen[base_id] = count + 1
+
+        if count:
+            row = dict(row)
+            row["id"] = f"{base_id}-{count + 1}"
+        unique.append(row)
+
+    return unique
+
+
 def scrape_checklists(db: sqlite3.Connection) -> int:
     """Populate the ``checklists`` table with NCP checklist data.
 
@@ -478,6 +496,8 @@ def scrape_checklists(db: sqlite3.Connection) -> int:
         log.info("Merged to %d total checklists (live + curated)", len(rows))
     else:
         rows = _CURATED_CHECKLISTS
+
+    rows = _deduplicate_rows(rows)
 
     db.execute("DELETE FROM checklists")
     db.executemany(

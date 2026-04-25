@@ -56,6 +56,13 @@ class TestEnvOverrides:
         cfg = Config.load()
         assert cfg.update_interval == 3600
 
+    def test_negative_update_interval_rejected(
+        self, tmp_data_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setenv("NIST_MCP_UPDATE_INTERVAL", "-1")
+        with pytest.raises(ValueError, match="update_interval"):
+            Config.load()
+
 
 class TestConfigFile:
     def test_file_values_used(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
