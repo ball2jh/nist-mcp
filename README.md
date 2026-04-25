@@ -4,10 +4,20 @@ A small Model Context Protocol (MCP) server that gives AI assistants structured 
 
 ## Installation
 
+Install directly from GitHub:
+
 ```bash
-pipx install nist-mcp
+pipx install git+https://github.com/ball2jh/nist-mcp.git
 # or
-pip install nist-mcp
+pip install git+https://github.com/ball2jh/nist-mcp.git
+```
+
+For local development:
+
+```bash
+git clone https://github.com/ball2jh/nist-mcp.git
+cd nist-mcp
+pip install -e ".[dev,scraper]"
 ```
 
 ## Configuration
